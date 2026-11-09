@@ -69,6 +69,13 @@
   .confirm.on{display:flex}
   #toast{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);background:#1f2933;color:#fff;padding:7px 14px;border-radius:6px;font-size:12.5px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:20}
   #toast.on{opacity:1}
+  .refwrap{display:flex;gap:4px;align-items:flex-start}
+  .refwrap select{flex:1;min-width:0}
+  .addref{padding:4px 9px;font-weight:600;color:var(--blue)}
+  .newref{display:none;gap:4px;margin-top:4px}
+  .newref.on{display:flex}
+  .newref input{flex:1;min-width:0}
+  .newref button{padding:4px 9px}
   .flt{display:flex;flex-direction:column;gap:1px}
   .flt small{font-size:10.5px;color:var(--muted);padding-left:2px}
   .flt select{max-width:190px}
@@ -379,12 +386,19 @@ function fieldHtml(c){
   if (c.isFormula) return `<div class="${cls}">${lab}<div class="ro" id="in_${c.id}" data-ro="1"></div></div>`;
   if (c.type === "Bool")
     return `<div class="f chk"><input type="checkbox" id="in_${c.id}" data-c="${c.id}"><label for="in_${c.id}">${esc(c.label)}</label></div>`;
-  if (c.ref === "Ref")
-    return `<div class="${cls}">${lab}<select id="in_${c.id}" data-c="${c.id}"><option value=""></option>${
-      refOptions(c).map(([id,l])=>`<option value="${id}">${esc(l)}</option>`).join("")}</select></div>`;
-  if (c.ref === "RefList")
-    return `<div class="${cls}">${lab}<select multiple size="4" id="in_${c.id}" data-c="${c.id}">${
-      refOptions(c).map(([id,l])=>`<option value="${id}">${esc(l)}</option>`).join("")}</select></div>`;
+  if (c.ref) {
+    const opts = refOptions(c).map(([id,l])=>`<option value="${id}">${esc(l)}</option>`).join("");
+    const sel = c.ref === "Ref"
+      ? `<select id="in_${c.id}" data-c="${c.id}"><option value=""></option>${opts}</select>`
+      : `<select multiple size="4" id="in_${c.id}" data-c="${c.id}">${opts}</select>`;
+    const add = c.refCol ? `<button type="button" class="addref" data-add="${c.id}" title="Créer une nouvelle valeur dans ${esc(c.refTable)}">+</button>` : "";
+    return `<div class="${cls}">${lab}<div class="refwrap">${sel}${add}</div>
+      <div class="newref" id="nr_${c.id}">
+        <input type="text" placeholder="Nouveau : ${esc(c.label)}" data-newfor="${c.id}">
+        <button type="button" class="primary" data-create="${c.id}">Créer</button>
+        <button type="button" data-cancelnew="${c.id}" title="Annuler">✕</button>
+      </div></div>`;
+  }
   if (c.type === "Choice" && c.choices)
     return `<div class="${cls}">${lab}<select id="in_${c.id}" data-c="${c.id}"><option value=""></option>${
       c.choices.map(x=>`<option>${esc(x)}</option>`).join("")}</select></div>`;
@@ -593,8 +607,57 @@ $("tbody").onclick = e => { const tr = e.target.closest("tr"); if (!tr) return;
   selectedId = r.id; render(); openForm(r);
   try { grist.setCursorPos({rowId: r.id}); } catch(err){} };
 $("btnNew").onclick = () => { if (dirty) { toast("Enregistrez ou annulez la fiche en cours"); return; } selectedId=null; render(); openForm(null); };
-$("form").addEventListener("input", () => setDirty(true));
-$("form").addEventListener("change", () => setDirty(true));
+$("form").addEventListener("input", e => { if (!e.target.dataset.newfor) setDirty(true); });
+$("form").addEventListener("change", e => { if (!e.target.dataset.newfor) setDirty(true); });
+
+/* ---------- Création d'une valeur dans une table liée ---------- */
+function toggleNew(id, on){
+  const box = $("nr_"+id); if (!box) return;
+  box.classList.toggle("on", on);
+  const inp = box.querySelector("input"); inp.value = "";
+  if (on) inp.focus();
+}
+async function createRef(id){
+  const c = cols.find(x => x.id === id); if (!c) return;
+  const inp = $("nr_"+id).querySelector("input");
+  const val = inp.value.trim();
+  if (!val) { inp.focus(); return; }
+  // Valeur déjà existante (sans tenir compte des accents/majuscules) : on la sélectionne
+  let newId = [...c.refMap.entries()].find(([,l]) => norm(l) === norm(val))?.[0];
+  const btn = $("nr_"+id).querySelector("[data-create]"); btn.disabled = true;
+  try {
+    setDirty(true);
+    if (newId) toast("Cette valeur existe déjà : elle a été sélectionnée");
+    else {
+      const res = await grist.docApi.applyUserActions([["AddRecord", c.refTable, null, {[c.refCol]: val}]]);
+      newId = res && res.retValues ? res.retValues[0] : null;
+      if (!newId) throw new Error("identifiant non renvoyé");
+      // mise à jour de toutes les colonnes pointant vers la même table
+      cols.filter(x => x.ref && x.refTable === c.refTable && x.refCol === c.refCol).forEach(x => {
+        x.refMap.set(newId, val);
+        const s = $("in_"+x.id);
+        if (s) s.insertAdjacentHTML("beforeend", `<option value="${newId}">${esc(val)}</option>`);
+      });
+      toast(`« ${val} » ajouté à ${c.refTable}`);
+    }
+    const s = $("in_"+id);
+    if (c.ref === "Ref") s.value = String(newId);
+    else [...s.options].forEach(o => { if (o.value === String(newId)) o.selected = true; });
+    toggleNew(id, false);
+  } catch(e){ console.error(e); toast("Création impossible : " + e.message); }
+  btn.disabled = false;
+}
+$("form").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.add) toggleNew(b.dataset.add, !$("nr_"+b.dataset.add).classList.contains("on"));
+  else if (b.dataset.cancelnew) toggleNew(b.dataset.cancelnew, false);
+  else if (b.dataset.create) createRef(b.dataset.create);
+});
+$("form").addEventListener("keydown", e => {
+  const id = e.target.dataset.newfor; if (!id) return;
+  if (e.key === "Enter") { e.preventDefault(); createRef(id); }
+  if (e.key === "Escape") { e.stopPropagation(); toggleNew(id, false); }
+});
 $("btnSave").onclick = save;
 $("btnCancel").onclick = () => closeForm(true);
 $("btnClose").onclick = () => closeForm(false);
