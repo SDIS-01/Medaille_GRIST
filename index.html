@@ -69,6 +69,21 @@
   .confirm.on{display:flex}
   #toast{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);background:#1f2933;color:#fff;padding:7px 14px;border-radius:6px;font-size:12.5px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:20}
   #toast.on{opacity:1}
+  .flt{display:flex;flex-direction:column;gap:1px}
+  .flt small{font-size:10.5px;color:var(--muted);padding-left:2px}
+  .flt select{max-width:190px}
+  .flt select.on{border-color:var(--blue);background:#eef4fc}
+  /* Panneau de configuration des filtres */
+  #cfg{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(460px,94%);max-height:86vh;background:var(--panel);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.25);display:none;flex-direction:column;z-index:12}
+  #cfg.open{display:flex}
+  #cfg .dbody{padding:8px 16px}
+  .cfg-hint{color:var(--muted);font-size:12px;margin:4px 0 8px}
+  .cfg-row{display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid var(--line)}
+  .cfg-row.on{background:#f3f7fd}
+  .cfg-row label{flex:1;cursor:pointer}
+  .cfg-row .typ{font-size:11px;color:var(--muted)}
+  .cfg-row button{padding:1px 7px;font-size:11px}
+  .cfg-sep{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:10px 0 4px}
   @media (max-width:560px){.grid{grid-template-columns:1fr}}
 </style>
 </head>
@@ -80,11 +95,10 @@
 
 <div class="toolbar">
   <input id="q" type="search" placeholder="Rechercher (nom, CIS, arrêté, précisions…)">
-  <select id="fMed"><option value="">Toutes médailles</option></select>
-  <select id="fGrp"><option value="">Tous groupements</option></select>
-  <select id="fAn"><option value="">Toutes années</option></select>
-  <select id="fSit"><option value="">Toutes situations</option></select>
+  <span id="filters" style="display:contents"></span>
   <button id="reset" title="Effacer les filtres">✕</button>
+  <button id="btnCfg" title="Choisir les filtres">⚙ Filtres</button>
+  <button id="btnCols" title="Choisir les colonnes affichées">☰ Colonnes</button>
   <button class="primary" id="btnNew">+ Nouvelle demande</button>
 </div>
 
@@ -115,6 +129,19 @@
     <button class="primary" id="btnSave">Enregistrer</button>
   </div>
 </aside>
+<div id="cfg" role="dialog" aria-label="Configuration des filtres">
+  <div class="dhead"><h2 id="cfgTitle">Configurer les filtres</h2><button id="cfgClose" title="Fermer">✕</button></div>
+  <div class="dbody">
+    <div class="cfg-hint" id="cfgHint"></div>
+    <div id="cfgList"></div>
+  </div>
+  <div class="dfoot">
+    <button id="cfgDefault">Rétablir par défaut</button>
+    <span class="sp"></span>
+    <button id="cfgCancel">Annuler</button>
+    <button class="primary" id="cfgSave">Enregistrer</button>
+  </div>
+</div>
 <div id="toast"></div>
 
 <script>
@@ -137,6 +164,8 @@ const CHAMPS_LARGES = ["Précisions","Arrêté","Situation","Nom_Prénom"];
 const CHAMPS_TEXTE_LONG = ["Précisions"];
 // Champ affiché en titre de fiche
 const CHAMP_TITRE = "Nom_Prénom";
+// Filtres proposés par défaut (modifiables depuis le bouton ⚙ Filtres)
+const FILTRES_DEFAUT = ["Médaille","Groupement","Année","Situation"];
 
 /* ========================================================================= */
 const norm = s => String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
@@ -152,6 +181,11 @@ let current = null;     // enregistrement ouvert (null = nouveau)
 let dirty = false;
 let selectedId = null;
 let statFilter = "";
+let savedFilters = null;  // colIds enregistrés dans les options du widget (null = défaut)
+let savedCols = null;     // colIds des colonnes affichées dans la liste (null = défaut)
+let cfgMode = "filtres";  // "filtres" ou "colonnes"
+let filterVals = {};      // colId -> valeur sélectionnée
+let cfgDraft = [];        // colIds en cours d'édition dans le panneau
 
 const col = key => byKey[norm(key)];
 
@@ -171,6 +205,8 @@ function isYearCol(c){ return c && c.n === "annee"; }
 function isDateCol(c){ return c && (c.type==="Date" || c.type.startsWith("DateTime")); }
 function display(c, v){
   if (v == null || v === "") return "";
+  if (c.ref === "Ref") return refLabel(c, v);
+  if (c.ref === "RefList") return Array.isArray(v) ? v.slice(1).map(x => refLabel(c, x)).join(", ") : "";
   if (Array.isArray(v) && v[0]==="L") return v.slice(1).join(", ");
   if (isDateCol(c)){
     const t = toNumDate(v); if (t == null) return String(v);
@@ -206,9 +242,19 @@ async function loadMeta(){
     const id = C.colId[i];
     if (id === "manualSort" || id.startsWith("gristHelper_")) return;
     let opts = {}; try { opts = JSON.parse(C.widgetOptions[i] || "{}"); } catch(e){}
-    list.push({ id, label: String(C.label[i] || id).replace(/_/g," "), type: C.type[i] || "Any",
+    const type = C.type[i] || "Any";
+    const c = { id, label: String(C.label[i] || id).replace(/_/g," "), type,
       choices: opts.choices || null, isFormula: !!(C.isFormula[i] && C.formula[i]),
-      pos: C.parentPos[i] });
+      pos: C.parentPos[i] };
+    // Colonnes Référence : table liée + colonne affichée
+    const m = type.match(/^(Ref|RefList):(.+)$/);
+    if (m) {
+      c.ref = m[1]; c.refTable = m[2];
+      const k = C.id.indexOf(C.visibleCol ? C.visibleCol[i] : 0);
+      c.refCol = k >= 0 ? C.colId[k] : null;
+      c.refMap = new Map();
+    }
+    list.push(c);
   });
   list.sort((a,b)=>a.pos-b.pos);
   cols = list; byKey = {};
@@ -217,6 +263,20 @@ async function loadMeta(){
 async function loadRows(){
   const D = await grist.docApi.fetchTable(tableId);
   rows = D.id.map((id, i) => { const r = {id}; cols.forEach(c => r[c.id] = D[c.id] ? D[c.id][i] : null); return r; });
+  // Intitulés des colonnes Référence
+  const cache = {};
+  for (const c of cols.filter(c => c.ref)) {
+    try {
+      const R = cache[c.refTable] || (cache[c.refTable] = await grist.docApi.fetchTable(c.refTable));
+      const vals = c.refCol && R[c.refCol] ? R[c.refCol] : R.id;
+      c.refMap = new Map(R.id.map((id, i) => [id, vals[i] == null ? "" : String(vals[i])]));
+    } catch(e){ console.warn("Référence illisible", c.id, e); }
+  }
+}
+function refLabel(c, id){ return !id ? "" : (c.refMap.has(id) ? c.refMap.get(id) : "#" + id); }
+function refOptions(c){
+  return [...c.refMap.entries()].filter(([,l]) => l !== "")
+    .sort((a,b) => a[1].localeCompare(b[1], "fr", {numeric:true}));
 }
 async function refresh(){
   try {
@@ -229,32 +289,49 @@ async function refresh(){
 }
 
 /* ---------- Filtres ---------- */
-function distinct(c){
+function distinct(c, fn = display){
   if (!c) return [];
   const m = new Map();
-  rows.forEach(r => { const d = display(c, r[c.id]); if (d) m.set(d, (m.get(d)||0)+1); });
+  rows.forEach(r => { const d = fn(c, r[c.id]); if (d) m.set(d, (m.get(d)||0)+1); });
   return [...m.keys()].sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
 }
-function fillSelect(sel, c, first){
-  const keep = sel.value;
-  sel.innerHTML = `<option value="">${first}</option>` + distinct(c).map(v=>`<option>${esc(v)}</option>`).join("");
-  sel.value = distinct(c).includes(keep) ? keep : "";
-  sel.style.display = c ? "" : "none";
+// Valeur utilisée pour filtrer : l'année pour les dates, la valeur affichée sinon
+function fval(c, v){
+  if (isDateCol(c)) { const t = toNumDate(v); return t==null ? "" : String(new Date(t*1000).getUTCFullYear()); }
+  return display(c, v);
+}
+function filterCols(){
+  const ids = savedFilters || FILTRES_DEFAUT.map(col).filter(Boolean).map(c => c.id);
+  return ids.map(id => cols.find(c => c.id === id)).filter(Boolean);
+}
+function defaultListIds(){
+  const l = COLONNES_LISTE.map(col).filter(Boolean);
+  return (l.length ? l : cols.slice(0,8)).map(c => c.id);
+}
+function listCols(){
+  return (savedCols || defaultListIds()).map(id => cols.find(c => c.id === id)).filter(Boolean);
 }
 function buildFilters(){
-  fillSelect($("fMed"), col("Médaille"), "Toutes médailles");
-  fillSelect($("fGrp"), col("Groupement"), "Tous groupements");
-  fillSelect($("fAn"),  col("Année"), "Toutes années");
-  fillSelect($("fSit"), col("Situation"), "Toutes situations");
+  const fc = filterCols();
+  Object.keys(filterVals).forEach(k => { if (!fc.some(c=>c.id===k)) delete filterVals[k]; });
+  $("filters").innerHTML = fc.map(c => {
+    const vals = distinct(c, fval);
+    if (filterVals[c.id] && !vals.includes(filterVals[c.id])) delete filterVals[c.id];
+    const cur = filterVals[c.id] || "";
+    const lab = isDateCol(c) && !isYearCol(c) ? c.label + " (année)" : c.label;
+    return `<div class="flt"><small>${esc(lab)}</small><select data-f="${c.id}" class="${cur?"on":""}">` +
+      `<option value="">Tous</option>` +
+      vals.map(v => `<option${v===cur?" selected":""}>${esc(v)}</option>`).join("") + `</select></div>`;
+  }).join("");
 }
 function filtered(){
   const q = norm($("q").value);
-  const f = [["fMed","Médaille"],["fGrp","Groupement"],["fAn","Année"],["fSit","Situation"]]
-    .map(([s,k]) => [col(k), $(s).value]).filter(([c,v]) => c && v);
+  const f = Object.entries(filterVals).filter(([,v]) => v)
+    .map(([id,v]) => [cols.find(c=>c.id===id), v]).filter(([c]) => c);
   const sit = col("Situation");
   return rows.filter(r => {
     if (q && !cols.some(c => norm(display(c, r[c.id])).includes(q))) return false;
-    if (!f.every(([c,v]) => display(c, r[c.id]) === v)) return false;
+    if (!f.every(([c,v]) => fval(c, r[c.id]) === v)) return false;
     if (statFilter && sit) {
       const b = badgeClass(display(sit, r[sit.id]));
       if (statFilter === "none" ? b !== "" : b !== statFilter) return false;
@@ -265,8 +342,7 @@ function filtered(){
 
 /* ---------- Rendu liste ---------- */
 function render(){
-  const listCols = COLONNES_LISTE.map(col).filter(Boolean);
-  const shown = listCols.length ? listCols : cols.slice(0,8);
+  const shown = listCols();
   $("thead").innerHTML = shown.map(c =>
     `<th data-c="${c.id}">${esc(c.label)}${sortCol===c.id?`<span class="arr">${sortAsc?"▲":"▼"}</span>`:""}</th>`).join("");
   let data = filtered();
@@ -303,6 +379,12 @@ function fieldHtml(c){
   if (c.isFormula) return `<div class="${cls}">${lab}<div class="ro" id="in_${c.id}" data-ro="1"></div></div>`;
   if (c.type === "Bool")
     return `<div class="f chk"><input type="checkbox" id="in_${c.id}" data-c="${c.id}"><label for="in_${c.id}">${esc(c.label)}</label></div>`;
+  if (c.ref === "Ref")
+    return `<div class="${cls}">${lab}<select id="in_${c.id}" data-c="${c.id}"><option value=""></option>${
+      refOptions(c).map(([id,l])=>`<option value="${id}">${esc(l)}</option>`).join("")}</select></div>`;
+  if (c.ref === "RefList")
+    return `<div class="${cls}">${lab}<select multiple size="4" id="in_${c.id}" data-c="${c.id}">${
+      refOptions(c).map(([id,l])=>`<option value="${id}">${esc(l)}</option>`).join("")}</select></div>`;
   if (c.type === "Choice" && c.choices)
     return `<div class="${cls}">${lab}<select id="in_${c.id}" data-c="${c.id}"><option value=""></option>${
       c.choices.map(x=>`<option>${esc(x)}</option>`).join("")}</select></div>`;
@@ -335,6 +417,11 @@ function fillForm(r){
     const el = $("in_"+c.id); if (!el) return;
     const v = r ? r[c.id] : null;
     if (el.dataset.ro) { el.textContent = display(c, v); return; }
+    if (c.ref === "Ref") { el.value = v ? String(v) : ""; return; }
+    if (c.ref === "RefList") {
+      const ids = Array.isArray(v) ? v.slice(1).map(String) : [];
+      [...el.options].forEach(o => o.selected = ids.includes(o.value)); return;
+    }
     if (c.type === "Bool") el.checked = !!v;
     else if (isDateCol(c)) {
       const t = toNumDate(v);
@@ -353,7 +440,9 @@ function readForm(){
     if (c.isFormula) return;
     const el = $("in_"+c.id); if (!el) return;
     let v;
-    if (c.type === "Bool") v = el.checked;
+    if (c.ref === "Ref") v = el.value ? Number(el.value) : 0;
+    else if (c.ref === "RefList") { const ids = [...el.selectedOptions].map(o => Number(o.value)); v = ids.length ? ["L", ...ids] : null; }
+    else if (c.type === "Bool") v = el.checked;
     else if (isDateCol(c)) {
       if (!el.value) v = null;
       else if (isYearCol(c)) v = Date.UTC(+el.value,0,1)/1000;
@@ -371,7 +460,7 @@ function openForm(r){
   current = r;
   buildForm(); fillForm(r);
   const t = col(CHAMP_TITRE);
-  $("dTitle").textContent = r ? (t && r[t.id] ? r[t.id] : "Demande n°"+r.id) : "Nouvelle demande";
+  $("dTitle").textContent = r ? (t && r[t.id] ? display(t, r[t.id]) : "Demande n°"+r.id) : "Nouvelle demande";
   $("btnDel").style.display = r ? "" : "none";
   $("confirm").classList.remove("on");
   $("drawer").classList.add("open"); $("overlay").classList.add("open");
@@ -395,7 +484,9 @@ async function save(){
       const ch = {};
       Object.keys(data).forEach(k => {
         const a = data[k], b = current[k];
-        const same = (a == null || a === "") && (b == null || b === "") || a === b ||
+        const empty = x => x == null || x === "" || x === 0;
+        const key = x => Array.isArray(x) ? JSON.stringify(x.slice(1).sort()) : JSON.stringify(x);
+        const same = empty(a) && empty(b) || a === b || key(a) === key(b) ||
           (isDateCol(cols.find(c=>c.id===k)) && a === toNumDate(b));
         if (!same) ch[k] = a;
       });
@@ -425,8 +516,74 @@ async function del(){
 let toastT;
 function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("on"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),2800); }
 
-["q","fMed","fGrp","fAn","fSit"].forEach(id => $(id).addEventListener("input", render));
-$("reset").onclick = () => { ["q","fMed","fGrp","fAn","fSit"].forEach(id=>$(id).value=""); statFilter=""; render(); };
+$("q").addEventListener("input", render);
+$("filters").addEventListener("change", e => {
+  const s = e.target.closest("select[data-f]"); if (!s) return;
+  filterVals[s.dataset.f] = s.value; s.classList.toggle("on", !!s.value); render();
+});
+$("reset").onclick = () => { $("q").value = ""; filterVals = {}; statFilter = ""; buildFilters(); render(); };
+
+/* ---------- Configuration des filtres et des colonnes ---------- */
+const TYPES = {Text:"texte",Choice:"choix",ChoiceList:"choix multiple",Date:"date",Numeric:"nombre",Int:"entier",Bool:"oui/non",Ref:"référence",RefList:"références",Any:"—"};
+const CFG = {
+  filtres:  { titre: "Configurer les filtres", sep: "Filtres affichés", vide: "Aucun filtre.",
+    aide: "Cochez les colonnes à proposer comme filtres et ordonnez-les avec ↑ ↓. Les colonnes de date sont filtrées par année.",
+    actuel: () => filterCols().map(c => c.id),
+    defaut: () => FILTRES_DEFAUT.map(col).filter(Boolean).map(c => c.id),
+    appliquer: ids => { savedFilters = ids; buildFilters(); }, option: "filtres", ok: "Filtres enregistrés" },
+  colonnes: { titre: "Colonnes affichées", sep: "Colonnes visibles", vide: "Aucune colonne : la liste sera vide.",
+    aide: "Cochez les colonnes à afficher dans la liste et ordonnez-les avec ↑ ↓ (de gauche à droite).",
+    actuel: () => listCols().map(c => c.id),
+    defaut: defaultListIds,
+    appliquer: ids => { savedCols = ids; }, option: "colonnes", ok: "Colonnes enregistrées" },
+};
+function renderCfg(){
+  const on = cfgDraft.map(id => cols.find(c=>c.id===id)).filter(Boolean);
+  const off = cols.filter(c => !cfgDraft.includes(c.id));
+  const row = (c, i, active) => `<div class="cfg-row ${active?"on":""}">
+      <input type="checkbox" id="cf_${c.id}" data-id="${c.id}" ${active?"checked":""}>
+      <label for="cf_${c.id}">${esc(c.label)} <span class="typ">${TYPES[c.type.split(":")[0]]||c.type}</span></label>
+      ${active ? `<button data-up="${i}" ${i===0?"disabled":""} title="Monter">↑</button>
+                  <button data-down="${i}" ${i===on.length-1?"disabled":""} title="Descendre">↓</button>` : ""}
+    </div>`;
+  $("cfgList").innerHTML =
+    `<div class="cfg-sep">${CFG[cfgMode].sep} (${on.length})</div>` +
+    (on.length ? on.map((c,i)=>row(c,i,true)).join("") : `<div class="cfg-hint">${CFG[cfgMode].vide}</div>`) +
+    `<div class="cfg-sep">Autres colonnes</div>` + off.map(c=>row(c,0,false)).join("");
+}
+function openCfg(mode){
+  if (!cols.length) return;
+  cfgMode = mode === "colonnes" ? "colonnes" : "filtres";
+  $("cfgTitle").textContent = CFG[cfgMode].titre;
+  $("cfgHint").textContent = CFG[cfgMode].aide;
+  cfgDraft = CFG[cfgMode].actuel();
+  renderCfg(); $("cfg").classList.add("open"); $("overlay").classList.add("open");
+}
+function closeCfg(){
+  $("cfg").classList.remove("open");
+  if (!$("drawer").classList.contains("open")) $("overlay").classList.remove("open");
+}
+$("btnCfg").onclick = () => openCfg("filtres");
+$("btnCols").onclick = () => openCfg("colonnes");
+$("cfgList").addEventListener("change", e => {
+  const id = e.target.dataset.id; if (!id) return;
+  cfgDraft = e.target.checked ? [...cfgDraft, id] : cfgDraft.filter(x => x !== id);
+  renderCfg();
+});
+$("cfgList").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  const i = +(b.dataset.up ?? b.dataset.down), j = b.dataset.up != null ? i-1 : i+1;
+  [cfgDraft[i], cfgDraft[j]] = [cfgDraft[j], cfgDraft[i]]; renderCfg();
+});
+$("cfgDefault").onclick = () => { cfgDraft = CFG[cfgMode].defaut(); renderCfg(); };
+$("cfgCancel").onclick = closeCfg;
+$("cfgClose").onclick = closeCfg;
+$("cfgSave").onclick = async () => {
+  const m = CFG[cfgMode], ids = cfgDraft.slice();
+  m.appliquer(ids); render(); closeCfg();
+  try { await grist.setOption(m.option, ids); toast(m.ok + " dans le document"); }
+  catch(e){ console.error(e); toast("Appliqué, mais non enregistré (droits insuffisants ?)"); }
+};
 $("stats").onclick = e => { const s = e.target.closest(".stat"); if (!s) return; statFilter = s.dataset.k === statFilter ? "" : s.dataset.k; render(); };
 $("thead").onclick = e => { const th = e.target.closest("th"); if (!th) return;
   if (sortCol === th.dataset.c) sortAsc = !sortAsc; else { sortCol = th.dataset.c; sortAsc = true; } render(); };
@@ -441,17 +598,23 @@ $("form").addEventListener("change", () => setDirty(true));
 $("btnSave").onclick = save;
 $("btnCancel").onclick = () => closeForm(true);
 $("btnClose").onclick = () => closeForm(false);
-$("overlay").onclick = () => closeForm(false);
+$("overlay").onclick = () => { if ($("cfg").classList.contains("open")) closeCfg(); else closeForm(false); };
 $("btnDel").onclick = () => $("confirm").classList.add("on");
 $("btnDelNo").onclick = () => $("confirm").classList.remove("on");
 $("btnDelYes").onclick = del;
 document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && $("cfg").classList.contains("open")) { closeCfg(); return; }
   if (e.key === "Escape" && $("drawer").classList.contains("open")) closeForm(false);
   if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase() === "s" && $("drawer").classList.contains("open")) { e.preventDefault(); save(); }
 });
 
 /* ---------- Grist ---------- */
-grist.ready({ requiredAccess: "full", allowSelectBy: true });
+grist.ready({ requiredAccess: "full", allowSelectBy: true, onEditOptions: () => openCfg("colonnes") });
+grist.onOptions(opts => {
+  savedFilters = opts && Array.isArray(opts.filtres) ? opts.filtres : null;
+  savedCols = opts && Array.isArray(opts.colonnes) ? opts.colonnes : null;
+  if (cols.length) { buildFilters(); render(); }
+});
 grist.onRecords(() => { if (!dirty) refresh(); });
 grist.onRecord(r => { if (r && r.id && !$("drawer").classList.contains("open")) { selectedId = r.id; render(); } });
 </script>
