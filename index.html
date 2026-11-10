@@ -95,6 +95,7 @@
   .copy-all{padding:0 5px;font-size:11px;margin-left:5px}
   .addrow{margin-top:8px}
   .hint{color:var(--muted);font-size:12px;margin:8px 0}
+  input.bad{border-color:var(--ko);background:#fff5f5}
   /* Panneaux de configuration */
   .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(460px,94%);max-height:86vh;background:var(--panel);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.25);display:none;flex-direction:column;z-index:12}
   .modal.open{display:flex}
@@ -221,6 +222,8 @@ const CHAMPS_AGENT = ["Grade","Nom_Prénom","Statut","CIS_SLIS","Catégorie","Gr
 const CHAMP_TITRE = "Nom_Prénom";
 // Filtres proposés par défaut
 const FILTRES_DEFAUT = ["Médaille","Groupement","Année","Situation"];
+// Colonne identifiante des tables liées (Référence) : affichée à côté du nom pour distinguer les homonymes
+const COL_IDENTIFIANT_REF = "Matricule";
 // Nombre de lignes d'agents proposées à l'ouverture d'une intervention
 const NB_AGENTS_INITIAL = 2;
 
@@ -334,10 +337,40 @@ async function loadRows(){
       const R = cache[c.refTable] || (cache[c.refTable] = await grist.docApi.fetchTable(c.refTable));
       const vals = c.refCol && R[c.refCol] ? R[c.refCol] : R.id;
       c.refMap = new Map(R.id.map((id, i) => [id, vals[i] == null ? "" : String(vals[i])]));
+      const k = Object.keys(R).find(k => norm(k) === norm(COL_IDENTIFIANT_REF));
+      c.refIdMap = k ? new Map(R.id.map((id, i) => [id, R[k][i] == null ? "" : String(R[k][i])])) : new Map();
     } catch(e){ console.warn("Référence illisible", c.id, e); }
+    buildRefLabels(c);
   }
 }
 function refLabel(c, id){ return !id ? "" : (c.refMap.has(id) ? c.refMap.get(id) : "#" + id); }
+// Libellé complet et unique : « DUPONT Hervé — mat. 12345 » (ou « (#id) » si toujours ambigu)
+function buildRefLabels(c){
+  const base = id => { const l = c.refMap.get(id) || "", m = c.refIdMap && c.refIdMap.get(id);
+    return m ? `${l} — mat. ${m}` : l; };
+  const count = new Map();
+  [...c.refMap.keys()].forEach(id => { const b = norm(base(id)); count.set(b, (count.get(b)||0)+1); });
+  c.refFull = new Map(); c.refByFull = new Map(); c.refByName = new Map();
+  [...c.refMap.keys()].forEach(id => {
+    if (!c.refMap.get(id)) return;
+    let l = base(id); if (count.get(norm(l)) > 1) l += ` (#${id})`;
+    c.refFull.set(id, l); c.refByFull.set(norm(l), id);
+    const n = norm(c.refMap.get(id));
+    c.refByName.set(n, [...(c.refByName.get(n) || []), id]);
+  });
+}
+const refFull = (c, id) => !id ? "" : (c.refFull && c.refFull.get(id)) || refLabel(c, id);
+// Retrouve l'enregistrement lié à partir du texte saisi
+function resolveRef(c, txt){
+  const t = norm(txt); if (!t) return { id: 0 };
+  if (c.refByFull.has(t)) return { id: c.refByFull.get(t) };
+  const ids = c.refByName.get(t) || [];
+  if (ids.length === 1) return { id: ids[0] };
+  if (ids.length > 1) return { err: `${ids.length} fiches portent ce nom : choisissez dans la liste celle avec le bon matricule` };
+  return { err: `« ${txt} » n'existe pas dans ${c.refTable}` };
+}
+const refDatalistHtml = c => `<datalist id="rl_${c.id}">${refOptions(c).map(([id]) =>
+  `<option value="${esc(refFull(c, id))}">`).join("")}</datalist>`;
 function refOptions(c){
   return [...c.refMap.entries()].filter(([,l]) => l !== "")
     .sort((a,b) => a[1].localeCompare(b[1], "fr", {numeric:true}));
@@ -394,7 +427,7 @@ function filtered(){
     .map(([id,v]) => [colById(id), v]).filter(([c]) => c);
   const sit = col("Situation");
   return rows.filter(r => {
-    if (q && !cols.some(c => norm(display(c, r[c.id])).includes(q))) return false;
+    if (q && !cols.some(c => norm(c.ref === "Ref" ? refFull(c, r[c.id]) : display(c, r[c.id])).includes(q))) return false;
     if (!f.every(([c,v]) => fval(c, r[c.id]) === v)) return false;
     if (statFilter && sit) {
       const b = badgeClass(display(sit, r[sit.id]));
@@ -420,7 +453,7 @@ function render(){
     shown.map(c => {
       const d = display(c, r[c.id]);
       if (c === sit && d) return `<td title="${esc(d)}"><span class="badge ${badgeClass(d)}">${esc(d)}</span></td>`;
-      return `<td title="${esc(d)}">${esc(d)}</td>`;
+      return `<td title="${esc(c.ref === "Ref" ? refFull(c, r[c.id]) : d)}">${esc(d)}</td>`;
     }).join("") + "</tr>").join("");
   $("empty").style.display = data.length ? "none" : "";
   renderStats();
@@ -466,11 +499,11 @@ const isLongable = c => !c.ref && !c.isFormula && (c.type === "Text" || c.type =
 // Contrôle de saisie seul (sans libellé), réutilisé dans la fiche et dans le tableau des agents
 function controlHtml(c, a, long){
   if (c.type === "Bool") return `<input type="checkbox" ${a}>`;
+  if (c.ref === "Ref")   // champ de recherche : nom ou matricule
+    return `<input type="text" list="rl_${c.id}" ${a} data-ref="1" autocomplete="off" placeholder="Nom ou matricule…">`;
   if (c.ref) {
     const opts = refOptions(c).map(([id,l])=>`<option value="${id}">${esc(l)}</option>`).join("");
-    return c.ref === "Ref"
-      ? `<select ${a}><option value=""></option>${opts}</select>`
-      : `<select multiple size="3" ${a}>${opts}</select>`;
+    return `<select multiple size="3" ${a}>${opts}</select>`;
   }
   if (c.type === "Choice" && c.choices)
     return `<select ${a}><option value=""></option>${c.choices.map(x=>`<option>${esc(x)}</option>`).join("")}</select>`;
@@ -500,7 +533,7 @@ function fieldHtml(c, L){
         <input type="text" placeholder="Nouveau : ${esc(c.label)}" data-newfor="${c.id}">
         <button type="button" class="primary" data-create="${c.id}">Créer</button>
         <button type="button" data-cancelnew="${c.id}" title="Annuler">✕</button>
-      </div></div>`;
+      </div>${c.ref === "Ref" ? refDatalistHtml(c) : ""}</div>`;
   }
   return `<div class="${cls}">${lab}${controlHtml(c, a, long)}${usesDatalist(c, long) ? datalistHtml(c) : ""}</div>`;
 }
@@ -521,7 +554,8 @@ function buildForm(){
         `<th>${esc(c.label)}<button type="button" class="copy-all" data-copy="${c.id}" title="Recopier la valeur de la 1re ligne sur tous les agents">⇊</button></th>`).join("")}
         <th></th></tr></thead><tbody id="agBody"></tbody></table></div>
       <button type="button" class="addrow" data-addag="1">+ Ajouter un agent</button>
-      ${agentCols.filter(c => usesDatalist(c)).map(datalistHtml).join("")}</fieldset>`
+      ${agentCols.filter(c => usesDatalist(c)).map(datalistHtml).join("")}
+      ${agentCols.filter(c => c.ref === "Ref").map(refDatalistHtml).join("")}</fieldset>`
       : `<div class="hint">Aucun champ n'est saisi « par agent ». Cochez-en dans ▤ Disposition.</div>`;
   }
   $("form").innerHTML = html;
@@ -530,7 +564,7 @@ function buildForm(){
 /* Lecture / écriture d'un contrôle */
 function writeValue(c, el, v){
   if (el.dataset.ro) { el.textContent = display(c, v); return; }
-  if (c.ref === "Ref") { el.value = v ? String(v) : ""; return; }
+  if (c.ref === "Ref") { el.value = refFull(c, v); el.classList.remove("bad"); return; }
   if (c.ref === "RefList") {
     const ids = Array.isArray(v) ? v.slice(1).map(String) : [];
     [...el.options].forEach(o => o.selected = ids.includes(o.value)); return;
@@ -547,7 +581,7 @@ function writeValue(c, el, v){
   }
 }
 function readValue(c, el){
-  if (c.ref === "Ref") return el.value ? Number(el.value) : 0;
+  if (c.ref === "Ref") return resolveRef(c, el.value).id || 0;
   if (c.ref === "RefList") { const ids = [...el.selectedOptions].map(o => Number(o.value)); return ids.length ? ["L", ...ids] : null; }
   if (c.type === "Bool") return el.checked;
   if (isDateCol(c)) {
@@ -573,6 +607,21 @@ function readForm(){
   return out;
 }
 function setDirty(b){ dirty = b; $("dirty").classList.toggle("on", b); }
+// Vérifie un champ Référence ; complète le libellé (avec matricule) si le nom est sans ambiguïté
+function checkRef(el, quiet){
+  const c = colById(el.dataset.c), r = resolveRef(c, el.value);
+  el.classList.toggle("bad", !!r.err);
+  el.title = r.err || "";
+  if (r.id) el.value = refFull(c, r.id);
+  if (r.err && !quiet) toast(r.err);
+  return !r.err;
+}
+// Avant enregistrement : bloque sur un nom ambigu ou inconnu
+function checkRefs(){
+  const bad = [...$("form").querySelectorAll("input[data-ref]")].find(el => el.value.trim() && !checkRef(el, true));
+  if (bad) { checkRef(bad); bad.focus(); return false; }
+  return true;
+}
 
 /* Lignes d'agents */
 function addAgent(focus){
@@ -618,6 +667,7 @@ function closeForm(force){
 
 /* ---------- Écriture ---------- */
 async function save(){
+  if (!checkRefs()) return;
   if (mode === "inter") return saveIntervention();
   const data = readForm();
   const t = col(CHAMP_TITRE);
@@ -856,7 +906,12 @@ $("tbody").onclick = e => { const tr = e.target.closest("tr"); if (!tr) return;
 $("btnNew").onclick = () => { if (dirty) { toast("Enregistrez ou annulez la fiche en cours"); return; } selectedId=null; render(); openForm(null); };
 $("btnInter").onclick = () => { if (dirty) { toast("Enregistrez ou annulez la fiche en cours"); return; } selectedId=null; render(); openForm(null, "inter"); };
 $("form").addEventListener("input", e => { if (!e.target.dataset.newfor) setDirty(true); });
-$("form").addEventListener("change", e => { if (!e.target.dataset.newfor) setDirty(true); });
+$("form").addEventListener("change", e => {
+  if (e.target.dataset.newfor) return;
+  if (e.target.dataset.ref && e.target.value.trim()) checkRef(e.target);
+  else if (e.target.dataset.ref) e.target.classList.remove("bad");
+  setDirty(true);
+});
 
 /* ---------- Création d'une valeur dans une table liée ---------- */
 function toggleNew(id, on){
@@ -882,14 +937,16 @@ async function createRef(id){
       if (!newId) throw new Error("identifiant non renvoyé");
       // mise à jour de toutes les listes pointant vers la même table (fiche et tableau des agents)
       cols.filter(x => x.ref && x.refTable === c.refTable && x.refCol === c.refCol).forEach(x => {
-        x.refMap.set(newId, val);
+        x.refMap.set(newId, val); buildRefLabels(x);
         document.querySelectorAll(`#form select[data-c="${x.id}"]`).forEach(s =>
           s.insertAdjacentHTML("beforeend", `<option value="${newId}">${esc(val)}</option>`));
+        const dl = $("rl_"+x.id);
+        if (dl) dl.insertAdjacentHTML("beforeend", `<option value="${esc(refFull(x, newId))}">`);
       });
       toast(`« ${val} » ajouté à ${c.refTable}`);
     }
     const s = $("in_"+id);
-    if (c.ref === "Ref") s.value = String(newId);
+    if (c.ref === "Ref") { s.value = refFull(c, newId); s.classList.remove("bad"); }
     else [...s.options].forEach(o => { if (o.value === String(newId)) o.selected = true; });
     toggleNew(id, false);
   } catch(e){ console.error(e); toast("Création impossible : " + e.message); }
