@@ -134,7 +134,6 @@
   <button id="btnCfg" title="Choisir les filtres">⚙ Filtres</button>
   <button id="btnCols" title="Choisir les colonnes affichées">☰ Colonnes</button>
   <button id="btnLay" title="Disposition des champs dans la fiche">▤ Disposition</button>
-  <button id="btnNew">+ Nouvelle demande</button>
   <button class="primary" id="btnInter">+ Nouvelle intervention</button>
 </div>
 
@@ -903,7 +902,6 @@ $("tbody").onclick = e => { const tr = e.target.closest("tr"); if (!tr) return;
   if (dirty) { toast("Enregistrez ou annulez la fiche en cours"); return; }
   selectedId = r.id; render(); openForm(r);
   try { grist.setCursorPos({rowId: r.id}); } catch(err){} };
-$("btnNew").onclick = () => { if (dirty) { toast("Enregistrez ou annulez la fiche en cours"); return; } selectedId=null; render(); openForm(null); };
 $("btnInter").onclick = () => { if (dirty) { toast("Enregistrez ou annulez la fiche en cours"); return; } selectedId=null; render(); openForm(null, "inter"); };
 $("form").addEventListener("input", e => { if (!e.target.dataset.newfor) setDirty(true); });
 $("form").addEventListener("change", e => {
