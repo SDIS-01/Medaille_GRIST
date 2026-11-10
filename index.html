@@ -499,7 +499,7 @@ const isLongable = c => !c.ref && !c.isFormula && (c.type === "Text" || c.type =
 function controlHtml(c, a, long){
   if (c.type === "Bool") return `<input type="checkbox" ${a}>`;
   if (c.ref === "Ref")   // champ de recherche : nom ou matricule
-    return `<input type="text" list="rl_${c.id}" ${a} data-ref="1" autocomplete="off" placeholder="Nom ou matricule…">`;
+    return `<input type="text" list="rl_${c.id}" ${a} data-ref="1" autocomplete="off"${c.refIdMap && c.refIdMap.size ? ' placeholder="Nom ou matricule…"' : ""}>`;
   if (c.ref) {
     const opts = refOptions(c).map(([id,l])=>`<option value="${id}">${esc(l)}</option>`).join("");
     return `<select multiple size="3" ${a}>${opts}</select>`;
