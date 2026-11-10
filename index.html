@@ -250,9 +250,13 @@ let cfgMode = "filtres";  // "filtres" ou "colonnes"
 let filterVals = {};      // colId -> valeur sélectionnée
 let cfgDraft = [];        // colIds en cours d'édition dans le panneau
 let layDraft = null;      // disposition en cours d'édition
+let savedSit;             // colonne des pastilles de situation (undefined = défaut, "" = aucune)
+let sitDraft = "";
 
 const col = key => byKey[norm(key)];
 const colById = id => cols.find(c => c.id === id);
+// Colonne utilisée pour les pastilles (En cours / Clôturées / …) et la couleur des badges
+const sitCol = () => savedSit === undefined ? col("Situation") : (savedSit ? colById(savedSit) : null);
 const idsOf = arr => arr.map(col).filter(Boolean).map(c => c.id);
 
 /* ---------- Valeurs ---------- */
@@ -424,7 +428,7 @@ function filtered(){
   const q = norm($("q").value);
   const f = Object.entries(filterVals).filter(([,v]) => v)
     .map(([id,v]) => [colById(id), v]).filter(([c]) => c);
-  const sit = col("Situation");
+  const sit = sitCol();
   return rows.filter(r => {
     if (q && !cols.some(c => norm(c.ref === "Ref" ? refFull(c, r[c.id]) : display(c, r[c.id])).includes(q))) return false;
     if (!f.every(([c,v]) => fval(c, r[c.id]) === v)) return false;
@@ -447,7 +451,7 @@ function render(){
     data = data.slice().sort((a,b)=>{ const x=sortVal(c,a[c.id]), y=sortVal(c,b[c.id]);
       return (x<y?-1:x>y?1:0) * (sortAsc?1:-1); });
   }
-  const sit = col("Situation");
+  const sit = sitCol();
   $("tbody").innerHTML = data.map(r => `<tr data-id="${r.id}" class="${r.id===selectedId?"sel":""}">` +
     shown.map(c => {
       const d = display(c, r[c.id]);
@@ -458,7 +462,7 @@ function render(){
   renderStats();
 }
 function renderStats(){
-  const sit = col("Situation");
+  const sit = sitCol();
   const n = {all: rows.length, "b-ok":0, "b-warn":0, "b-ko":0, none:0};
   if (sit) rows.forEach(r => { const b = badgeClass(display(sit, r[sit.id])); n[b||"none"]++; });
   const items = [["","Total",n.all]];
@@ -772,7 +776,11 @@ function renderCfg(){
       ${active ? `<button data-up="${i}" ${i===0?"disabled":""} title="Monter">↑</button>
                   <button data-down="${i}" ${i===on.length-1?"disabled":""} title="Descendre">↓</button>` : ""}
     </div>`;
-  $("cfgList").innerHTML =
+  const sitSel = cfgMode !== "filtres" ? "" :
+    `<div class="cfg-sep">Colonne de situation (pastilles en haut à droite)</div>
+     <select id="cfgSit" style="width:100%"><option value="">— Aucune —</option>${cols.map(c =>
+       `<option value="${c.id}" ${c.id===sitDraft?"selected":""}>${esc(c.label)}</option>`).join("")}</select>`;
+  $("cfgList").innerHTML = sitSel +
     `<div class="cfg-sep">${CFG[cfgMode].sep} (${on.length})</div>` +
     (on.length ? on.map((c,i)=>row(c,i,true)).join("") : `<div class="cfg-hint">${CFG[cfgMode].vide}</div>`) +
     `<div class="cfg-sep">Autres colonnes</div>` + off.map(c=>row(c,0,false)).join("");
@@ -783,6 +791,7 @@ function openCfg(m){
   $("cfgTitle").textContent = CFG[cfgMode].titre;
   $("cfgHint").textContent = CFG[cfgMode].aide;
   cfgDraft = CFG[cfgMode].actuel();
+  sitDraft = sitCol()?.id || "";
   renderCfg(); $("cfg").classList.add("open"); $("overlay").classList.add("open");
 }
 function closeModal(id){
@@ -793,6 +802,7 @@ const closeCfg = () => closeModal("cfg");
 $("btnCfg").onclick = () => openCfg("filtres");
 $("btnCols").onclick = () => openCfg("colonnes");
 $("cfgList").addEventListener("change", e => {
+  if (e.target.id === "cfgSit") { sitDraft = e.target.value; return; }
   const id = e.target.dataset.id; if (!id) return;
   cfgDraft = e.target.checked ? [...cfgDraft, id] : cfgDraft.filter(x => x !== id);
   renderCfg();
@@ -802,13 +812,23 @@ $("cfgList").addEventListener("click", e => {
   const i = +(b.dataset.up ?? b.dataset.down), j = b.dataset.up != null ? i-1 : i+1;
   [cfgDraft[i], cfgDraft[j]] = [cfgDraft[j], cfgDraft[i]]; renderCfg();
 });
-$("cfgDefault").onclick = () => { cfgDraft = CFG[cfgMode].defaut(); renderCfg(); };
+$("cfgDefault").onclick = () => {
+  cfgDraft = CFG[cfgMode].defaut();
+  if (cfgMode === "filtres") sitDraft = col("Situation")?.id || "";
+  renderCfg();
+};
 $("cfgCancel").onclick = closeCfg;
 $("cfgClose").onclick = closeCfg;
 $("cfgSave").onclick = async () => {
   const m = CFG[cfgMode], ids = cfgDraft.slice();
-  m.appliquer(ids); render(); closeCfg();
-  try { await grist.setOption(m.option, ids); toast(m.ok + " dans le document"); }
+  m.appliquer(ids);
+  if (cfgMode === "filtres") { savedSit = sitDraft; statFilter = ""; }
+  render(); closeCfg();
+  try {
+    await grist.setOption(m.option, ids);
+    if (cfgMode === "filtres") await grist.setOption("situation", savedSit);
+    toast(m.ok + " dans le document");
+  }
   catch(e){ console.error(e); toast("Appliqué, mais non enregistré (droits insuffisants ?)"); }
 };
 
@@ -987,6 +1007,7 @@ grist.ready({ requiredAccess: "full", allowSelectBy: true, onEditOptions: () => 
 grist.onOptions(opts => {
   savedFilters = opts && Array.isArray(opts.filtres) ? opts.filtres : null;
   savedCols = opts && Array.isArray(opts.colonnes) ? opts.colonnes : null;
+  savedSit = opts && typeof opts.situation === "string" ? opts.situation : undefined;
   savedLayout = opts && opts.disposition && Array.isArray(opts.disposition.sections) ? opts.disposition : null;
   if (cols.length) { buildFilters(); render(); }
 });
