@@ -46,15 +46,17 @@
   /* Panneau de saisie */
   #overlay{position:fixed;inset:0;background:rgba(20,25,35,.35);display:none;z-index:10}
   #drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,100%);background:var(--panel);box-shadow:-4px 0 18px rgba(0,0,0,.15);display:none;flex-direction:column;z-index:11}
+  #drawer.wide{width:min(1100px,100%)}
   #drawer.open,#overlay.open{display:flex}
   .dhead{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
   .dhead h2{font-size:15px;margin:0;flex:1}
   .dirty{font-size:11px;color:var(--warn);display:none}
   .dirty.on{display:inline}
   .dbody{flex:1;overflow:auto;padding:6px 16px 16px}
-  fieldset{border:none;margin:12px 0 0;padding:0}
+  fieldset{border:none;margin:12px 0 0;padding:0;min-width:0}
   legend{font-weight:600;color:var(--accent);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;padding:0 0 6px;border-bottom:2px solid var(--accent-soft);width:100%}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 14px;margin-top:9px}
+  #drawer.wide .grid{grid-template-columns:1fr 1fr 1fr}
   .f{display:flex;flex-direction:column;gap:3px}
   .f.full{grid-column:1/-1}
   .f label{font-size:11.5px;color:var(--muted)}
@@ -80,18 +82,42 @@
   .flt small{font-size:10.5px;color:var(--muted);padding-left:2px}
   .flt select{max-width:190px}
   .flt select.on{border-color:var(--blue);background:#eef4fc}
-  /* Panneau de configuration des filtres */
-  #cfg{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(460px,94%);max-height:86vh;background:var(--panel);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.25);display:none;flex-direction:column;z-index:12}
-  #cfg.open{display:flex}
-  #cfg .dbody{padding:8px 16px}
+  /* Tableau des agents (intervention) */
+  .agents{overflow:auto;margin-top:9px;border:1px solid var(--line);border-radius:6px}
+  .agents table{border:none}
+  .agents th,.agents td{max-width:none;overflow:visible;padding:4px 5px;vertical-align:top}
+  .agents th{position:static;cursor:default;white-space:nowrap}
+  .agents tbody tr{cursor:default}
+  .agents tbody tr:hover{background:none}
+  .agents td input:not([type=checkbox]),.agents td select{width:100%;min-width:130px}
+  .agents td.num{color:var(--muted);width:24px;padding-top:9px}
+  .agents td.del button{padding:3px 8px}
+  .copy-all{padding:0 5px;font-size:11px;margin-left:5px}
+  .addrow{margin-top:8px}
+  .hint{color:var(--muted);font-size:12px;margin:8px 0}
+  /* Panneaux de configuration */
+  .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(460px,94%);max-height:86vh;background:var(--panel);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.25);display:none;flex-direction:column;z-index:12}
+  .modal.open{display:flex}
+  .modal .dbody{padding:8px 16px}
+  #lay{width:min(820px,96%)}
   .cfg-hint{color:var(--muted);font-size:12px;margin:4px 0 8px}
   .cfg-row{display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid var(--line)}
   .cfg-row.on{background:#f3f7fd}
   .cfg-row label{flex:1;cursor:pointer}
-  .cfg-row .typ{font-size:11px;color:var(--muted)}
+  .typ{font-size:11px;color:var(--muted)}
   .cfg-row button{padding:1px 7px;font-size:11px}
   .cfg-sep{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:10px 0 4px}
-  @media (max-width:560px){.grid{grid-template-columns:1fr}}
+  .lay-sec{border:1px solid var(--line);border-radius:6px;margin:10px 0;padding:6px 8px}
+  .lay-sec.masked{background:#fafbfc}
+  .lay-sec-head{display:flex;gap:6px;align-items:center;padding-bottom:5px}
+  .lay-sec-head input{flex:1;font-weight:600;color:var(--accent)}
+  .lay-sec-head button,.lay-row button{padding:1px 7px;font-size:11px}
+  .lay-row{display:flex;align-items:center;gap:8px;padding:4px 2px;border-top:1px solid var(--line);font-size:12.5px;flex-wrap:wrap}
+  .lay-row .nm{flex:1;min-width:150px}
+  .lay-row select{max-width:160px;padding:2px 4px;font-size:12px}
+  .lay-row label.o{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:3px;cursor:pointer}
+  .lay-row label.o.agent{color:var(--blue)}
+  @media (max-width:560px){.grid,#drawer.wide .grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -106,7 +132,9 @@
   <button id="reset" title="Effacer les filtres">✕</button>
   <button id="btnCfg" title="Choisir les filtres">⚙ Filtres</button>
   <button id="btnCols" title="Choisir les colonnes affichées">☰ Colonnes</button>
-  <button class="primary" id="btnNew">+ Nouvelle demande</button>
+  <button id="btnLay" title="Disposition des champs dans la fiche">▤ Disposition</button>
+  <button id="btnNew">+ Nouvelle demande</button>
+  <button class="primary" id="btnInter">+ Nouvelle intervention</button>
 </div>
 
 <div class="wrap">
@@ -122,6 +150,7 @@
   <div class="dhead">
     <h2 id="dTitle">Fiche</h2>
     <span class="dirty" id="dirty">● modifications non enregistrées</span>
+    <button id="btnLay2" title="Disposition des champs">▤</button>
     <button id="btnClose" title="Fermer">✕</button>
   </div>
   <div class="dbody" id="form"></div>
@@ -136,7 +165,8 @@
     <button class="primary" id="btnSave">Enregistrer</button>
   </div>
 </aside>
-<div id="cfg" role="dialog" aria-label="Configuration des filtres">
+
+<div id="cfg" class="modal" role="dialog" aria-label="Configuration des filtres">
   <div class="dhead"><h2 id="cfgTitle">Configurer les filtres</h2><button id="cfgClose" title="Fermer">✕</button></div>
   <div class="dbody">
     <div class="cfg-hint" id="cfgHint"></div>
@@ -149,11 +179,27 @@
     <button class="primary" id="cfgSave">Enregistrer</button>
   </div>
 </div>
+
+<div id="lay" class="modal" role="dialog" aria-label="Disposition de la fiche">
+  <div class="dhead"><h2>Disposition de la fiche</h2><button id="layClose" title="Fermer">✕</button></div>
+  <div class="dbody">
+    <div class="cfg-hint">Renommez et ordonnez les sections, déplacez chaque champ avec la liste déroulante et ↑ ↓.
+      Cochez <b>par agent</b> pour les champs saisis agent par agent dans une intervention (les autres sont communs à tous les agents).</div>
+    <div id="layList"></div>
+  </div>
+  <div class="dfoot">
+    <button id="layDefault">Rétablir par défaut</button>
+    <span class="sp"></span>
+    <button id="layCancel">Annuler</button>
+    <button class="primary" id="laySave">Enregistrer</button>
+  </div>
+</div>
 <div id="toast"></div>
 
 <script>
 /* =========================================================================
-   CONFIGURATION
+   CONFIGURATION PAR DÉFAUT
+   (tout est modifiable depuis le widget : ⚙ Filtres, ☰ Colonnes, ▤ Disposition)
    Les colonnes sont retrouvées par leur libellé OU leur identifiant Grist,
    sans tenir compte des accents, majuscules, espaces ou tirets bas.
    ========================================================================= */
@@ -169,15 +215,20 @@ const COLONNES_LISTE = ["Nom_Prénom","Grade","Statut","CIS_SLIS","Groupement","
 // Champs saisis sur toute la largeur / en zone de texte
 const CHAMPS_LARGES = ["Précisions","Arrêté","Situation","Nom_Prénom"];
 const CHAMPS_TEXTE_LONG = ["Précisions"];
-// Champ affiché en titre de fiche
+// Champs saisis agent par agent dans une intervention (les autres sont communs)
+const CHAMPS_AGENT = ["Grade","Nom_Prénom","Statut","CIS_SLIS","Catégorie","Groupement","Médaille","Echelon_demandé","Echelon_obtenu"];
+// Champ affiché en titre de fiche (obligatoire)
 const CHAMP_TITRE = "Nom_Prénom";
-// Filtres proposés par défaut (modifiables depuis le bouton ⚙ Filtres)
+// Filtres proposés par défaut
 const FILTRES_DEFAUT = ["Médaille","Groupement","Année","Situation"];
+// Nombre de lignes d'agents proposées à l'ouverture d'une intervention
+const NB_AGENTS_INITIAL = 2;
 
 /* ========================================================================= */
 const norm = s => String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
 const $ = id => document.getElementById(id);
 const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const clone = o => JSON.parse(JSON.stringify(o));
 
 let tableId = null;
 let cols = [];          // [{id,label,type,choices,isFormula,n}]
@@ -185,16 +236,22 @@ let byKey = {};         // norm(label|id) -> col
 let rows = [];          // [{id, colId: value}]
 let sortCol = null, sortAsc = true;
 let current = null;     // enregistrement ouvert (null = nouveau)
+let mode = "fiche";     // "fiche" (une ligne) ou "inter" (intervention multi-agents)
+let agentCols = [];     // colonnes saisies par agent dans l'intervention en cours
 let dirty = false;
 let selectedId = null;
 let statFilter = "";
 let savedFilters = null;  // colIds enregistrés dans les options du widget (null = défaut)
 let savedCols = null;     // colIds des colonnes affichées dans la liste (null = défaut)
+let savedLayout = null;   // disposition de la fiche (null = défaut)
 let cfgMode = "filtres";  // "filtres" ou "colonnes"
 let filterVals = {};      // colId -> valeur sélectionnée
 let cfgDraft = [];        // colIds en cours d'édition dans le panneau
+let layDraft = null;      // disposition en cours d'édition
 
 const col = key => byKey[norm(key)];
+const colById = id => cols.find(c => c.id === id);
+const idsOf = arr => arr.map(col).filter(Boolean).map(c => c.id);
 
 /* ---------- Valeurs ---------- */
 function toNumDate(v){
@@ -308,15 +365,15 @@ function fval(c, v){
   return display(c, v);
 }
 function filterCols(){
-  const ids = savedFilters || FILTRES_DEFAUT.map(col).filter(Boolean).map(c => c.id);
-  return ids.map(id => cols.find(c => c.id === id)).filter(Boolean);
+  const ids = savedFilters || idsOf(FILTRES_DEFAUT);
+  return ids.map(colById).filter(Boolean);
 }
 function defaultListIds(){
   const l = COLONNES_LISTE.map(col).filter(Boolean);
   return (l.length ? l : cols.slice(0,8)).map(c => c.id);
 }
 function listCols(){
-  return (savedCols || defaultListIds()).map(id => cols.find(c => c.id === id)).filter(Boolean);
+  return (savedCols || defaultListIds()).map(colById).filter(Boolean);
 }
 function buildFilters(){
   const fc = filterCols();
@@ -334,7 +391,7 @@ function buildFilters(){
 function filtered(){
   const q = norm($("q").value);
   const f = Object.entries(filterVals).filter(([,v]) => v)
-    .map(([id,v]) => [cols.find(c=>c.id===id), v]).filter(([c]) => c);
+    .map(([id,v]) => [colById(id), v]).filter(([c]) => c);
   const sit = col("Situation");
   return rows.filter(r => {
     if (q && !cols.some(c => norm(display(c, r[c.id])).includes(q))) return false;
@@ -354,7 +411,7 @@ function render(){
     `<th data-c="${c.id}">${esc(c.label)}${sortCol===c.id?`<span class="arr">${sortAsc?"▲":"▼"}</span>`:""}</th>`).join("");
   let data = filtered();
   if (sortCol){
-    const c = cols.find(x=>x.id===sortCol);
+    const c = colById(sortCol);
     data = data.slice().sort((a,b)=>{ const x=sortVal(c,a[c.id]), y=sortVal(c,b[c.id]);
       return (x<y?-1:x>y?1:0) * (sortAsc?1:-1); });
   }
@@ -378,74 +435,132 @@ function renderStats(){
     `<span class="stat ${k} ${statFilter===k?"active":""}" data-k="${k}">${l}<b>${v}</b></span>`).join("");
 }
 
+/* ---------- Disposition de la fiche ---------- */
+// Forme : { sections:[{titre, champs:[colId]}], large:[colId], long:[colId], agent:[colId], masques:[colId] }
+function defaultLayout(){
+  const used = new Set();
+  const sections = SECTIONS.map(s => ({ titre: s.titre,
+    champs: idsOf(s.champs).filter(id => !used.has(id) && used.add(id)) }));
+  return { sections, large: idsOf(CHAMPS_LARGES), long: idsOf(CHAMPS_TEXTE_LONG),
+    agent: idsOf(CHAMPS_AGENT), masques: [] };
+}
+// Retire les colonnes disparues, place les nouvelles colonnes dans « Autres informations »
+function normLayout(L){
+  const exists = id => !!colById(id);
+  L.sections = (L.sections || []).map(s => ({ titre: s.titre || "", champs: (s.champs || []).filter(exists) }));
+  ["large","long","agent","masques"].forEach(k => L[k] = (L[k] || []).filter(exists));
+  const seen = new Set(L.masques);
+  L.sections.forEach(s => s.champs = s.champs.filter(id => !seen.has(id) && seen.add(id)));
+  const rest = cols.filter(c => !seen.has(c.id)).map(c => c.id);
+  if (rest.length) {
+    let s = L.sections.find(x => x.titre === "Autres informations");
+    if (!s) L.sections.push(s = { titre: "Autres informations", champs: [] });
+    s.champs.push(...rest);
+  }
+  return L;
+}
+function layout(){ return normLayout(savedLayout ? clone(savedLayout) : defaultLayout()); }
+const isLongable = c => !c.ref && !c.isFormula && (c.type === "Text" || c.type === "Any");
+
 /* ---------- Formulaire ---------- */
-function fieldHtml(c){
-  const full = CHAMPS_LARGES.map(norm).includes(c.n) || CHAMPS_LARGES.map(norm).includes(norm(c.id));
-  const cls = "f" + (full ? " full" : "");
-  const lab = `<label for="in_${c.id}">${esc(c.label)}</label>`;
-  if (c.isFormula) return `<div class="${cls}">${lab}<div class="ro" id="in_${c.id}" data-ro="1"></div></div>`;
-  if (c.type === "Bool")
-    return `<div class="f chk"><input type="checkbox" id="in_${c.id}" data-c="${c.id}"><label for="in_${c.id}">${esc(c.label)}</label></div>`;
+// Contrôle de saisie seul (sans libellé), réutilisé dans la fiche et dans le tableau des agents
+function controlHtml(c, a, long){
+  if (c.type === "Bool") return `<input type="checkbox" ${a}>`;
   if (c.ref) {
     const opts = refOptions(c).map(([id,l])=>`<option value="${id}">${esc(l)}</option>`).join("");
-    const sel = c.ref === "Ref"
-      ? `<select id="in_${c.id}" data-c="${c.id}"><option value=""></option>${opts}</select>`
-      : `<select multiple size="4" id="in_${c.id}" data-c="${c.id}">${opts}</select>`;
+    return c.ref === "Ref"
+      ? `<select ${a}><option value=""></option>${opts}</select>`
+      : `<select multiple size="3" ${a}>${opts}</select>`;
+  }
+  if (c.type === "Choice" && c.choices)
+    return `<select ${a}><option value=""></option>${c.choices.map(x=>`<option>${esc(x)}</option>`).join("")}</select>`;
+  if (isDateCol(c) && isYearCol(c))
+    return `<input type="number" min="1950" max="2100" step="1" ${a} placeholder="AAAA">`;
+  if (isDateCol(c)) return `<input type="date" ${a}>`;
+  if (c.type === "Numeric" || c.type === "Int") return `<input type="number" step="any" ${a}>`;
+  if (long) return `<textarea ${a}></textarea>`;
+  return `<input type="text" list="dl_${c.id}" ${a} autocomplete="off">`;
+}
+const usesDatalist = (c, long) => !c.ref && c.type !== "Bool" && !(c.type === "Choice" && c.choices) &&
+  !isDateCol(c) && c.type !== "Numeric" && c.type !== "Int" && !long;
+const datalistHtml = c => `<datalist id="dl_${c.id}">${distinct(c).map(v=>`<option value="${esc(v)}">`).join("")}</datalist>`;
+
+function fieldHtml(c, L){
+  const long = L.long.includes(c.id) && isLongable(c);
+  const cls = "f" + (L.large.includes(c.id) || long ? " full" : "");
+  const lab = `<label for="in_${c.id}">${esc(c.label)}</label>`;
+  const a = `id="in_${c.id}" data-c="${c.id}"`;
+  if (c.isFormula) return `<div class="${cls}">${lab}<div class="ro" id="in_${c.id}" data-ro="1"></div></div>`;
+  if (c.type === "Bool")
+    return `<div class="f chk">${controlHtml(c, a)}<label for="in_${c.id}">${esc(c.label)}</label></div>`;
+  if (c.ref) {
     const add = c.refCol ? `<button type="button" class="addref" data-add="${c.id}" title="Créer une nouvelle valeur dans ${esc(c.refTable)}">+</button>` : "";
-    return `<div class="${cls}">${lab}<div class="refwrap">${sel}${add}</div>
+    return `<div class="${cls}">${lab}<div class="refwrap">${controlHtml(c, a)}${add}</div>
       <div class="newref" id="nr_${c.id}">
         <input type="text" placeholder="Nouveau : ${esc(c.label)}" data-newfor="${c.id}">
         <button type="button" class="primary" data-create="${c.id}">Créer</button>
         <button type="button" data-cancelnew="${c.id}" title="Annuler">✕</button>
       </div></div>`;
   }
-  if (c.type === "Choice" && c.choices)
-    return `<div class="${cls}">${lab}<select id="in_${c.id}" data-c="${c.id}"><option value=""></option>${
-      c.choices.map(x=>`<option>${esc(x)}</option>`).join("")}</select></div>`;
-  if (isDateCol(c) && isYearCol(c))
-    return `<div class="${cls}">${lab}<input type="number" min="1950" max="2100" step="1" id="in_${c.id}" data-c="${c.id}" placeholder="AAAA"></div>`;
-  if (isDateCol(c))
-    return `<div class="${cls}">${lab}<input type="date" id="in_${c.id}" data-c="${c.id}"></div>`;
-  if (c.type === "Numeric" || c.type === "Int")
-    return `<div class="${cls}">${lab}<input type="number" step="any" id="in_${c.id}" data-c="${c.id}"></div>`;
-  if (CHAMPS_TEXTE_LONG.map(norm).includes(c.n))
-    return `<div class="${cls} full">${lab}<textarea id="in_${c.id}" data-c="${c.id}"></textarea></div>`;
-  // Texte : suggestions à partir des valeurs déjà saisies
-  return `<div class="${cls}">${lab}<input type="text" list="dl_${c.id}" id="in_${c.id}" data-c="${c.id}" autocomplete="off">` +
-    `<datalist id="dl_${c.id}">${distinct(c).map(v=>`<option value="${esc(v)}">`).join("")}</datalist></div>`;
+  return `<div class="${cls}">${lab}${controlHtml(c, a, long)}${usesDatalist(c, long) ? datalistHtml(c) : ""}</div>`;
 }
 function buildForm(){
-  const used = new Set();
-  let html = SECTIONS.map(s => {
-    const cs = s.champs.map(col).filter(c => c && !used.has(c.id));
-    cs.forEach(c => used.add(c.id));
+  const L = layout();
+  const agentSet = new Set(mode === "inter" ? L.agent.filter(id => !colById(id).isFormula) : []);
+  // En intervention : pas de champs formule, pas de champs « par agent » dans la partie commune
+  const keep = c => c && !agentSet.has(c.id) && !(mode === "inter" && c.isFormula);
+  let html = L.sections.map(s => {
+    const cs = s.champs.map(colById).filter(keep);
     if (!cs.length) return "";
-    return `<fieldset><legend>${esc(s.titre)}</legend><div class="grid">${cs.map(fieldHtml).join("")}</div></fieldset>`;
+    return `<fieldset><legend>${esc(s.titre)}</legend><div class="grid">${cs.map(c => fieldHtml(c, L)).join("")}</div></fieldset>`;
   }).join("");
-  const rest = cols.filter(c => !used.has(c.id));
-  if (rest.length) html += `<fieldset><legend>Autres informations</legend><div class="grid">${rest.map(fieldHtml).join("")}</div></fieldset>`;
+  agentCols = L.sections.flatMap(s => s.champs).filter(id => agentSet.has(id)).map(colById);
+  if (mode === "inter") {
+    html += agentCols.length ? `<fieldset><legend>Agents (<span id="nAg">0</span>)</legend>
+      <div class="agents"><table><thead><tr><th></th>${agentCols.map(c =>
+        `<th>${esc(c.label)}<button type="button" class="copy-all" data-copy="${c.id}" title="Recopier la valeur de la 1re ligne sur tous les agents">⇊</button></th>`).join("")}
+        <th></th></tr></thead><tbody id="agBody"></tbody></table></div>
+      <button type="button" class="addrow" data-addag="1">+ Ajouter un agent</button>
+      ${agentCols.filter(c => usesDatalist(c)).map(datalistHtml).join("")}</fieldset>`
+      : `<div class="hint">Aucun champ n'est saisi « par agent ». Cochez-en dans ▤ Disposition.</div>`;
+  }
   $("form").innerHTML = html;
 }
+
+/* Lecture / écriture d'un contrôle */
+function writeValue(c, el, v){
+  if (el.dataset.ro) { el.textContent = display(c, v); return; }
+  if (c.ref === "Ref") { el.value = v ? String(v) : ""; return; }
+  if (c.ref === "RefList") {
+    const ids = Array.isArray(v) ? v.slice(1).map(String) : [];
+    [...el.options].forEach(o => o.selected = ids.includes(o.value)); return;
+  }
+  if (c.type === "Bool") { el.checked = !!v; return; }
+  if (isDateCol(c)) {
+    const t = toNumDate(v);
+    el.value = t==null ? "" : (isYearCol(c) ? new Date(t*1000).getUTCFullYear() : new Date(t*1000).toISOString().slice(0,10));
+    return;
+  }
+  el.value = v == null ? "" : (Array.isArray(v) && v[0]==="L" ? v.slice(1).join(", ") : String(v));
+  if (el.tagName === "SELECT" && el.value === "" && v) {   // valeur hors liste de choix
+    el.insertAdjacentHTML("beforeend", `<option>${esc(v)}</option>`); el.value = String(v);
+  }
+}
+function readValue(c, el){
+  if (c.ref === "Ref") return el.value ? Number(el.value) : 0;
+  if (c.ref === "RefList") { const ids = [...el.selectedOptions].map(o => Number(o.value)); return ids.length ? ["L", ...ids] : null; }
+  if (c.type === "Bool") return el.checked;
+  if (isDateCol(c)) {
+    if (!el.value) return null;
+    return isYearCol(c) ? Date.UTC(+el.value,0,1)/1000 : Date.parse(el.value+"T00:00:00Z")/1000;
+  }
+  if (c.type === "Numeric" || c.type === "Int") return el.value === "" ? null : Number(el.value);
+  return el.value.trim();
+}
+const isEmpty = v => v == null || v === "" || v === 0 || v === false;
+
 function fillForm(r){
-  cols.forEach(c => {
-    const el = $("in_"+c.id); if (!el) return;
-    const v = r ? r[c.id] : null;
-    if (el.dataset.ro) { el.textContent = display(c, v); return; }
-    if (c.ref === "Ref") { el.value = v ? String(v) : ""; return; }
-    if (c.ref === "RefList") {
-      const ids = Array.isArray(v) ? v.slice(1).map(String) : [];
-      [...el.options].forEach(o => o.selected = ids.includes(o.value)); return;
-    }
-    if (c.type === "Bool") el.checked = !!v;
-    else if (isDateCol(c)) {
-      const t = toNumDate(v);
-      el.value = t==null ? "" : (isYearCol(c) ? new Date(t*1000).getUTCFullYear() : new Date(t*1000).toISOString().slice(0,10));
-    }
-    else el.value = v == null ? "" : (Array.isArray(v) && v[0]==="L" ? v.slice(1).join(", ") : String(v));
-    if (el.tagName === "SELECT" && el.value === "" && v) {   // valeur hors liste de choix
-      el.insertAdjacentHTML("beforeend", `<option>${esc(v)}</option>`); el.value = String(v);
-    }
-  });
+  cols.forEach(c => { const el = $("in_"+c.id); if (el) writeValue(c, el, r ? r[c.id] : null); });
   setDirty(false);
 }
 function readForm(){
@@ -453,28 +568,43 @@ function readForm(){
   cols.forEach(c => {
     if (c.isFormula) return;
     const el = $("in_"+c.id); if (!el) return;
-    let v;
-    if (c.ref === "Ref") v = el.value ? Number(el.value) : 0;
-    else if (c.ref === "RefList") { const ids = [...el.selectedOptions].map(o => Number(o.value)); v = ids.length ? ["L", ...ids] : null; }
-    else if (c.type === "Bool") v = el.checked;
-    else if (isDateCol(c)) {
-      if (!el.value) v = null;
-      else if (isYearCol(c)) v = Date.UTC(+el.value,0,1)/1000;
-      else v = Date.parse(el.value+"T00:00:00Z")/1000;
-    }
-    else if (c.type === "Numeric" || c.type === "Int") v = el.value === "" ? null : Number(el.value);
-    else v = el.value.trim();
-    out[c.id] = v;
+    out[c.id] = readValue(c, el);
   });
   return out;
 }
 function setDirty(b){ dirty = b; $("dirty").classList.toggle("on", b); }
 
-function openForm(r){
-  current = r;
+/* Lignes d'agents */
+function addAgent(focus){
+  const body = $("agBody"); if (!body) return;
+  body.insertAdjacentHTML("beforeend", `<tr>${'<td class="num"></td>'}${agentCols.map(c =>
+    `<td>${controlHtml(c, `data-c="${c.id}" data-ag="1" aria-label="${esc(c.label)}"`)}</td>`).join("")}
+    <td class="del"><button type="button" class="danger" data-delag="1" title="Retirer cet agent">✕</button></td></tr>`);
+  renumber();
+  if (focus) body.lastElementChild.querySelector("[data-c]")?.focus();
+}
+function renumber(){
+  const trs = [...$("agBody").children];
+  trs.forEach((tr, i) => tr.firstElementChild.textContent = i + 1);
+  $("nAg").textContent = trs.length;
+}
+function copyDown(id){
+  const c = colById(id);
+  const els = [...$("agBody").querySelectorAll(`[data-c="${id}"]`)];
+  if (els.length < 2) return;
+  const v = readValue(c, els[0]);
+  els.slice(1).forEach(el => writeValue(c, el, v));
+  setDirty(true); toast(`« ${c.label} » recopié sur ${els.length} agents`);
+}
+
+function openForm(r, m = "fiche"){
+  current = r; mode = m;
+  $("drawer").classList.toggle("wide", mode === "inter");
   buildForm(); fillForm(r);
+  if (mode === "inter") for (let i = 0; i < NB_AGENTS_INITIAL; i++) addAgent();
   const t = col(CHAMP_TITRE);
-  $("dTitle").textContent = r ? (t && r[t.id] ? display(t, r[t.id]) : "Demande n°"+r.id) : "Nouvelle demande";
+  $("dTitle").textContent = mode === "inter" ? "Nouvelle intervention"
+    : r ? (t && r[t.id] ? display(t, r[t.id]) : "Demande n°"+r.id) : "Nouvelle demande";
   $("btnDel").style.display = r ? "" : "none";
   $("confirm").classList.remove("on");
   $("drawer").classList.add("open"); $("overlay").classList.add("open");
@@ -488,9 +618,10 @@ function closeForm(force){
 
 /* ---------- Écriture ---------- */
 async function save(){
+  if (mode === "inter") return saveIntervention();
   const data = readForm();
   const t = col(CHAMP_TITRE);
-  if (t && !data[t.id]) { toast(`Le champ « ${t.label} » est obligatoire`); $("in_"+t.id).focus(); return; }
+  if (t && $("in_"+t.id) && !data[t.id]) { toast(`Le champ « ${t.label} » est obligatoire`); $("in_"+t.id).focus(); return; }
   $("btnSave").disabled = true;
   try {
     if (current) {
@@ -501,7 +632,7 @@ async function save(){
         const empty = x => x == null || x === "" || x === 0;
         const key = x => Array.isArray(x) ? JSON.stringify(x.slice(1).sort()) : JSON.stringify(x);
         const same = empty(a) && empty(b) || a === b || key(a) === key(b) ||
-          (isDateCol(cols.find(c=>c.id===k)) && a === toNumDate(b));
+          (isDateCol(colById(k)) && a === toNumDate(b));
         if (!same) ch[k] = a;
       });
       if (Object.keys(ch).length) await grist.docApi.applyUserActions([["UpdateRecord", tableId, current.id, ch]]);
@@ -515,6 +646,38 @@ async function save(){
       const r = rows.find(x=>x.id===newId);
       if (r) { selectedId = r.id; openForm(r); render(); try { grist.setCursorPos({rowId:r.id}); } catch(e){} }
     }
+  } catch(e){ console.error(e); toast("Erreur d'enregistrement : " + e.message); }
+  $("btnSave").disabled = false;
+}
+// Intervention : une ligne par agent, les champs communs sont répétés sur chaque ligne
+async function saveIntervention(){
+  if (!agentCols.length) { toast("Aucun champ « par agent » configuré"); return; }
+  const common = readForm();
+  const recs = [];
+  for (const tr of $("agBody").children) {
+    const r = {}; let any = false;
+    agentCols.forEach(c => {
+      const v = readValue(c, tr.querySelector(`[data-c="${c.id}"]`));
+      r[c.id] = v; if (!isEmpty(v)) any = true;
+    });
+    if (any) recs.push({ ...common, ...r, _tr: tr });   // lignes entièrement vides ignorées
+  }
+  if (!recs.length) { toast("Ajoutez au moins un agent"); return; }
+  const t = col(CHAMP_TITRE);
+  if (t && agentCols.includes(t)) {
+    const miss = recs.find(r => !r[t.id]);
+    if (miss) { toast(`« ${t.label} » est obligatoire pour chaque agent`); miss._tr.querySelector(`[data-c="${t.id}"]`).focus(); return; }
+  } else if (t && $("in_"+t.id) && !common[t.id]) {
+    toast(`Le champ « ${t.label} » est obligatoire`); $("in_"+t.id).focus(); return;
+  }
+  recs.forEach(r => delete r._tr);
+  const keys = Object.keys(recs[0]);
+  const colValues = Object.fromEntries(keys.map(k => [k, recs.map(r => r[k])]));
+  $("btnSave").disabled = true;
+  try {
+    await grist.docApi.applyUserActions([["BulkAddRecord", tableId, recs.map(() => null), colValues]]);
+    toast(`Intervention enregistrée : ${recs.length} ligne${recs.length > 1 ? "s" : ""} créée${recs.length > 1 ? "s" : ""}`);
+    setDirty(false); closeForm(true); await refresh();
   } catch(e){ console.error(e); toast("Erreur d'enregistrement : " + e.message); }
   $("btnSave").disabled = false;
 }
@@ -539,11 +702,12 @@ $("reset").onclick = () => { $("q").value = ""; filterVals = {}; statFilter = ""
 
 /* ---------- Configuration des filtres et des colonnes ---------- */
 const TYPES = {Text:"texte",Choice:"choix",ChoiceList:"choix multiple",Date:"date",Numeric:"nombre",Int:"entier",Bool:"oui/non",Ref:"référence",RefList:"références",Any:"—"};
+const typeLabel = c => TYPES[c.type.split(":")[0]] || c.type;
 const CFG = {
   filtres:  { titre: "Configurer les filtres", sep: "Filtres affichés", vide: "Aucun filtre.",
     aide: "Cochez les colonnes à proposer comme filtres et ordonnez-les avec ↑ ↓. Les colonnes de date sont filtrées par année.",
     actuel: () => filterCols().map(c => c.id),
-    defaut: () => FILTRES_DEFAUT.map(col).filter(Boolean).map(c => c.id),
+    defaut: () => idsOf(FILTRES_DEFAUT),
     appliquer: ids => { savedFilters = ids; buildFilters(); }, option: "filtres", ok: "Filtres enregistrés" },
   colonnes: { titre: "Colonnes affichées", sep: "Colonnes visibles", vide: "Aucune colonne : la liste sera vide.",
     aide: "Cochez les colonnes à afficher dans la liste et ordonnez-les avec ↑ ↓ (de gauche à droite).",
@@ -552,11 +716,11 @@ const CFG = {
     appliquer: ids => { savedCols = ids; }, option: "colonnes", ok: "Colonnes enregistrées" },
 };
 function renderCfg(){
-  const on = cfgDraft.map(id => cols.find(c=>c.id===id)).filter(Boolean);
+  const on = cfgDraft.map(colById).filter(Boolean);
   const off = cols.filter(c => !cfgDraft.includes(c.id));
   const row = (c, i, active) => `<div class="cfg-row ${active?"on":""}">
       <input type="checkbox" id="cf_${c.id}" data-id="${c.id}" ${active?"checked":""}>
-      <label for="cf_${c.id}">${esc(c.label)} <span class="typ">${TYPES[c.type.split(":")[0]]||c.type}</span></label>
+      <label for="cf_${c.id}">${esc(c.label)} <span class="typ">${typeLabel(c)}</span></label>
       ${active ? `<button data-up="${i}" ${i===0?"disabled":""} title="Monter">↑</button>
                   <button data-down="${i}" ${i===on.length-1?"disabled":""} title="Descendre">↓</button>` : ""}
     </div>`;
@@ -565,18 +729,19 @@ function renderCfg(){
     (on.length ? on.map((c,i)=>row(c,i,true)).join("") : `<div class="cfg-hint">${CFG[cfgMode].vide}</div>`) +
     `<div class="cfg-sep">Autres colonnes</div>` + off.map(c=>row(c,0,false)).join("");
 }
-function openCfg(mode){
+function openCfg(m){
   if (!cols.length) return;
-  cfgMode = mode === "colonnes" ? "colonnes" : "filtres";
+  cfgMode = m === "colonnes" ? "colonnes" : "filtres";
   $("cfgTitle").textContent = CFG[cfgMode].titre;
   $("cfgHint").textContent = CFG[cfgMode].aide;
   cfgDraft = CFG[cfgMode].actuel();
   renderCfg(); $("cfg").classList.add("open"); $("overlay").classList.add("open");
 }
-function closeCfg(){
-  $("cfg").classList.remove("open");
+function closeModal(id){
+  $(id).classList.remove("open");
   if (!$("drawer").classList.contains("open")) $("overlay").classList.remove("open");
 }
+const closeCfg = () => closeModal("cfg");
 $("btnCfg").onclick = () => openCfg("filtres");
 $("btnCols").onclick = () => openCfg("colonnes");
 $("cfgList").addEventListener("change", e => {
@@ -598,6 +763,88 @@ $("cfgSave").onclick = async () => {
   try { await grist.setOption(m.option, ids); toast(m.ok + " dans le document"); }
   catch(e){ console.error(e); toast("Appliqué, mais non enregistré (droits insuffisants ?)"); }
 };
+
+/* ---------- Éditeur de disposition ---------- */
+function renderLay(){
+  const L = layDraft;
+  const secOpts = cur => L.sections.map((s,i) =>
+    `<option value="${i}" ${i===cur?"selected":""}>${esc(s.titre || "(sans titre)")}</option>`).join("") +
+    `<option value="-1" ${cur===-1?"selected":""}>— Masqué —</option>`;
+  const chk = (opt, id, label, extra = "", dis = false) =>
+    `<label class="o ${extra}"><input type="checkbox" data-opt="${opt}" data-id="${id}" ${L[opt].includes(id)?"checked":""} ${dis?"disabled":""}>${label}</label>`;
+  const row = (id, si, i, n) => {
+    const c = colById(id);
+    return `<div class="lay-row">
+      <span class="nm">${esc(c.label)} <span class="typ">${typeLabel(c)}${c.isFormula ? " · formule" : ""}</span></span>
+      ${si >= 0 ? chk("agent", id, "par agent", "agent", c.isFormula) + chk("large", id, "pleine largeur") +
+        (isLongable(c) ? chk("long", id, "texte long") : "") : ""}
+      <select data-move="${id}" title="Section">${secOpts(si)}</select>
+      ${si >= 0 ? `<button data-fup="${si},${i}" ${i===0?"disabled":""} title="Monter">↑</button><button data-fdown="${si},${i}" ${i===n-1?"disabled":""} title="Descendre">↓</button>` : ""}
+    </div>`;
+  };
+  $("layList").innerHTML = L.sections.map((s, si) => `<div class="lay-sec">
+      <div class="lay-sec-head">
+        <input value="${esc(s.titre)}" data-title="${si}" placeholder="Titre de la section">
+        <button data-sup="${si}" ${si===0?"disabled":""} title="Monter la section">↑</button>
+        <button data-sdown="${si}" ${si===L.sections.length-1?"disabled":""} title="Descendre la section">↓</button>
+        <button class="danger" data-sdel="${si}" title="Supprimer la section (ses champs passent en masqués)">✕</button>
+      </div>
+      ${s.champs.map((id,i) => row(id, si, i, s.champs.length)).join("") || '<div class="cfg-hint">Section vide : déplacez-y des champs avec la liste déroulante.</div>'}
+    </div>`).join("") +
+    `<button data-sadd="1">+ Ajouter une section</button>
+     <div class="lay-sec masked"><div class="cfg-sep">Champs masqués (${L.masques.length})</div>
+       ${L.masques.map(id => row(id, -1, 0, 0)).join("") || '<div class="cfg-hint">Aucun.</div>'}</div>`;
+}
+function openLay(){
+  if (!cols.length) return;
+  if ($("drawer").classList.contains("open") && dirty) { toast("Enregistrez ou annulez la fiche en cours"); return; }
+  layDraft = layout(); renderLay();
+  $("lay").classList.add("open"); $("overlay").classList.add("open");
+}
+const closeLay = () => closeModal("lay");
+$("btnLay").onclick = openLay;
+$("btnLay2").onclick = openLay;
+$("layClose").onclick = closeLay;
+$("layCancel").onclick = closeLay;
+$("layDefault").onclick = () => { layDraft = normLayout(defaultLayout()); renderLay(); };
+$("layList").addEventListener("input", e => {
+  const si = e.target.dataset.title; if (si == null) return;
+  layDraft.sections[+si].titre = e.target.value;
+});
+$("layList").addEventListener("change", e => {
+  const L = layDraft, t = e.target;
+  if (t.dataset.opt) {
+    const k = t.dataset.opt, id = t.dataset.id;
+    L[k] = t.checked ? [...L[k], id] : L[k].filter(x => x !== id);
+  } else if (t.dataset.move) {
+    const id = t.dataset.move, to = +t.value;
+    L.sections.forEach(s => s.champs = s.champs.filter(x => x !== id));
+    L.masques = L.masques.filter(x => x !== id);
+    if (to < 0) L.masques.push(id); else L.sections[to].champs.push(id);
+  } else return;
+  renderLay();
+});
+$("layList").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  const L = layDraft, d = b.dataset, swap = (a, i, j) => { [a[i], a[j]] = [a[j], a[i]]; };
+  if (d.sadd) L.sections.push({ titre: "Nouvelle section", champs: [] });
+  else if (d.sup != null) swap(L.sections, +d.sup, +d.sup - 1);
+  else if (d.sdown != null) swap(L.sections, +d.sdown, +d.sdown + 1);
+  else if (d.sdel != null) { L.masques.push(...L.sections[+d.sdel].champs); L.sections.splice(+d.sdel, 1); }
+  else if (d.fup) { const [si,i] = d.fup.split(",").map(Number); swap(L.sections[si].champs, i, i-1); }
+  else if (d.fdown) { const [si,i] = d.fdown.split(",").map(Number); swap(L.sections[si].champs, i, i+1); }
+  else return;
+  renderLay();
+});
+$("laySave").onclick = async () => {
+  savedLayout = clone(layDraft);
+  closeLay();
+  if ($("drawer").classList.contains("open") && !dirty) openForm(current, mode);
+  try { await grist.setOption("disposition", savedLayout); toast("Disposition enregistrée dans le document"); }
+  catch(e){ console.error(e); toast("Appliqué, mais non enregistré (droits insuffisants ?)"); }
+};
+
+/* ---------- Liste ---------- */
 $("stats").onclick = e => { const s = e.target.closest(".stat"); if (!s) return; statFilter = s.dataset.k === statFilter ? "" : s.dataset.k; render(); };
 $("thead").onclick = e => { const th = e.target.closest("th"); if (!th) return;
   if (sortCol === th.dataset.c) sortAsc = !sortAsc; else { sortCol = th.dataset.c; sortAsc = true; } render(); };
@@ -607,6 +854,7 @@ $("tbody").onclick = e => { const tr = e.target.closest("tr"); if (!tr) return;
   selectedId = r.id; render(); openForm(r);
   try { grist.setCursorPos({rowId: r.id}); } catch(err){} };
 $("btnNew").onclick = () => { if (dirty) { toast("Enregistrez ou annulez la fiche en cours"); return; } selectedId=null; render(); openForm(null); };
+$("btnInter").onclick = () => { if (dirty) { toast("Enregistrez ou annulez la fiche en cours"); return; } selectedId=null; render(); openForm(null, "inter"); };
 $("form").addEventListener("input", e => { if (!e.target.dataset.newfor) setDirty(true); });
 $("form").addEventListener("change", e => { if (!e.target.dataset.newfor) setDirty(true); });
 
@@ -618,7 +866,7 @@ function toggleNew(id, on){
   if (on) inp.focus();
 }
 async function createRef(id){
-  const c = cols.find(x => x.id === id); if (!c) return;
+  const c = colById(id); if (!c) return;
   const inp = $("nr_"+id).querySelector("input");
   const val = inp.value.trim();
   if (!val) { inp.focus(); return; }
@@ -632,11 +880,11 @@ async function createRef(id){
       const res = await grist.docApi.applyUserActions([["AddRecord", c.refTable, null, {[c.refCol]: val}]]);
       newId = res && res.retValues ? res.retValues[0] : null;
       if (!newId) throw new Error("identifiant non renvoyé");
-      // mise à jour de toutes les colonnes pointant vers la même table
+      // mise à jour de toutes les listes pointant vers la même table (fiche et tableau des agents)
       cols.filter(x => x.ref && x.refTable === c.refTable && x.refCol === c.refCol).forEach(x => {
         x.refMap.set(newId, val);
-        const s = $("in_"+x.id);
-        if (s) s.insertAdjacentHTML("beforeend", `<option value="${newId}">${esc(val)}</option>`);
+        document.querySelectorAll(`#form select[data-c="${x.id}"]`).forEach(s =>
+          s.insertAdjacentHTML("beforeend", `<option value="${newId}">${esc(val)}</option>`));
       });
       toast(`« ${val} » ajouté à ${c.refTable}`);
     }
@@ -649,9 +897,13 @@ async function createRef(id){
 }
 $("form").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  if (b.dataset.add) toggleNew(b.dataset.add, !$("nr_"+b.dataset.add).classList.contains("on"));
-  else if (b.dataset.cancelnew) toggleNew(b.dataset.cancelnew, false);
-  else if (b.dataset.create) createRef(b.dataset.create);
+  const d = b.dataset;
+  if (d.add) toggleNew(d.add, !$("nr_"+d.add).classList.contains("on"));
+  else if (d.cancelnew) toggleNew(d.cancelnew, false);
+  else if (d.create) createRef(d.create);
+  else if (d.addag) { addAgent(true); setDirty(true); }
+  else if (d.delag) { b.closest("tr").remove(); renumber(); setDirty(true); }
+  else if (d.copy) copyDown(d.copy);
 });
 $("form").addEventListener("keydown", e => {
   const id = e.target.dataset.newfor; if (!id) return;
@@ -661,11 +913,16 @@ $("form").addEventListener("keydown", e => {
 $("btnSave").onclick = save;
 $("btnCancel").onclick = () => closeForm(true);
 $("btnClose").onclick = () => closeForm(false);
-$("overlay").onclick = () => { if ($("cfg").classList.contains("open")) closeCfg(); else closeForm(false); };
+$("overlay").onclick = () => {
+  if ($("lay").classList.contains("open")) closeLay();
+  else if ($("cfg").classList.contains("open")) closeCfg();
+  else closeForm(false);
+};
 $("btnDel").onclick = () => $("confirm").classList.add("on");
 $("btnDelNo").onclick = () => $("confirm").classList.remove("on");
 $("btnDelYes").onclick = del;
 document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && $("lay").classList.contains("open")) { closeLay(); return; }
   if (e.key === "Escape" && $("cfg").classList.contains("open")) { closeCfg(); return; }
   if (e.key === "Escape" && $("drawer").classList.contains("open")) closeForm(false);
   if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase() === "s" && $("drawer").classList.contains("open")) { e.preventDefault(); save(); }
@@ -676,6 +933,7 @@ grist.ready({ requiredAccess: "full", allowSelectBy: true, onEditOptions: () => 
 grist.onOptions(opts => {
   savedFilters = opts && Array.isArray(opts.filtres) ? opts.filtres : null;
   savedCols = opts && Array.isArray(opts.colonnes) ? opts.colonnes : null;
+  savedLayout = opts && opts.disposition && Array.isArray(opts.disposition.sections) ? opts.disposition : null;
   if (cols.length) { buildFilters(); render(); }
 });
 grist.onRecords(() => { if (!dirty) refresh(); });
