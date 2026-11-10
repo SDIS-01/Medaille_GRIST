@@ -548,7 +548,7 @@ function buildForm(){
   }).join("");
   agentCols = L.sections.flatMap(s => s.champs).filter(id => agentSet.has(id)).map(colById);
   if (mode === "inter") {
-    html += agentCols.length ? `<fieldset><legend>Agents (<span id="nAg">0</span>)</legend>
+    html += agentCols.length ? `<fieldset><legend>Agent(s) concerné(s)</legend>
       <div class="agents"><table><thead><tr><th></th>${agentCols.map(c =>
         `<th>${esc(c.label)}<button type="button" class="copy-all" data-copy="${c.id}" title="Recopier la valeur de la 1re ligne sur tous les agents">⇊</button></th>`).join("")}
         <th></th></tr></thead><tbody id="agBody"></tbody></table></div>
@@ -634,7 +634,6 @@ function addAgent(focus){
 function renumber(){
   const trs = [...$("agBody").children];
   trs.forEach((tr, i) => tr.firstElementChild.textContent = i + 1);
-  $("nAg").textContent = trs.length;
 }
 function copyDown(id){
   const c = colById(id);
